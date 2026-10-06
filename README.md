@@ -11,3 +11,11 @@ conda install numpy scipy numba h5py astropy healpy
 
 We also need ```pyigm``` installed. Follow the installation instructions here: https://pyigm.readthedocs.io/en/latest/index.html
 
+To run the full pipeline, either submit a Slurm job:
+```
+sbatch submit_lyamocks.sh
+```
+or from an interative node execute:
+```
+sh submit_lyamocks.sh
+```
