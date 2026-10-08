@@ -15,7 +15,7 @@ The input parameters can be set in a config file (default: ```config_file.ini```
 
 Before running, create the following output subdirectory:
 ```
-mkdir /path/to/output/direcgory/aux
+mkdir /path/to/output/directory/aux
 ```
 and then link the output directory in the config file.
 
