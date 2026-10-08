@@ -12,20 +12,37 @@ import healpy
 from scipy.spatial import KDTree
 from multiprocessing import cpu_count
 import input_params as inpars
+import configparser
+import argparse
 
 # **********************************************
 # **********************************************
 # **********************************************
 # INPUT PARAMETERS
+argslist=None
 
-# I/O files
-nreal = inpars.nreal
-version = inpars.version
+parser = argparse.ArgumentParser()
+parser.add_argument('--config', required=True, help='config filename')
+args = parser.parse_args(argslist)
 
-# Input filenames                                                                                          
-input_dir = '/global/cfs/cdirs/desi/mocks/lya_forest/develop/cs-alpt/alpt_boxes/v0/box%d/' %nreal
-output_aux_dir = '/global/cfs/cdirs/desi/mocks/lya_forest/develop/cs-alpt/alpt_skewers/' + version + '/skewers-%d/aux/' %nreal
-output_dir = '/global/cfs/cdirs/desi/mocks/lya_forest/develop/cs-alpt/alpt_skewers/' + version + '/skewers-%d/' %nreal
+config = configparser.ConfigParser()
+config.read(args.config)
+
+nreal = int(config['SETUP']['seed'])
+version = config['SETUP']['version']
+
+# SETUP                                                                                                                                                                                                     
+ngrid = int(config['SETUP']['ngrid'])
+lbox = float(config['SETUP']['lbox'])
+zmin = float(config['SETUP']['zmin'])
+zmax = float(config['SETUP']['zmax'])
+
+nside = 16
+
+# I/O                                                                                                                                                                                                       
+input_dir = config['IO']['input_dir'] + 'mock_%d/' %nreal
+output_dir = config['IO']['output_dir'] + version + '/skewers-%d/' %nreal
+output_aux_dir = output_dir + 'aux/'
 
 # General parameters
 posx_filename = output_aux_dir + 'posx_dla_rspace.dat'
@@ -36,22 +53,12 @@ zposx_filename = output_aux_dir + 'posx_dla_zspace.dat'
 zposy_filename = output_aux_dir + 'posy_dla_zspace.dat'
 zposz_filename = output_aux_dir + 'posz_dla_zspace.dat'
 
-zarr_filename = 'zarr.DAT'
-darr_filename = 'dcomOM0.314OL0.686.DAT'
+zarr_filename = config['IO']['zarr_filename']
+darr_filename = config['IO']['darr_filename']
 
 qso_cat_filename = output_dir + 'master.fits'
 
 dla_nhi_filename = output_aux_dir + 'dla_nhi.dat'
-
-# General parameters
-
-nside = 16
-
-lbox = 10000.
-ngrid = 1800 
-
-zmin = 1.77
-zmax = 3.8
 
 # Observer positions
 obspos = [5000., 5000., 5000.]
@@ -59,13 +66,12 @@ obspos = [5000., 5000., 5000.]
 radsearch = 2
 
 # Cosmological parameters (Abacus)
-h = 0.6736
-H0 = 100
-Om = 0.314
-Orad = 0.
-Ok = 0.
-N_eff = 3.046
-w_eos = -1
+h = float(config['COSMOLOGY']['h'])
+Om = float(config['COSMOLOGY']['Om'])
+Orad = float(config['COSMOLOGY']['Orad'])
+Ok = float(config['COSMOLOGY']['Ok'])
+N_eff = float(config['COSMOLOGY']['N_eff'])
+w_eos = float(config['COSMOLOGY']['w_eos'])
 Ol = 1-Om-Ok-Orad
 
 # Random seed for stochasticity reproducibility
@@ -892,7 +898,7 @@ def get_NHI(z, NHI_min=17.2, NHI_max=22.5, NHI_nsamp=100):
 # **********************************************
 # **********************************************
 print('---------------------------------------------------------')
-print('Code to populate lightcone DM fields with galaxies/haloes')
+print('Convert DLA catalog form cartesian to sky coordinates')
 print('---------------------------------------------------------')
 
 ti = time.time()

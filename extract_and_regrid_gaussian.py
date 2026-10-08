@@ -11,21 +11,35 @@ from multiprocessing import Pool, cpu_count
 import input_params as inpars
 import math
 import h5py
+import argparse
+import configparser
 
 # **********************************************
 # **********************************************
 # **********************************************
 # INPUT PARAMETERS
+argslist=None
 
-# I/O files           
-nreal = inpars.nreal
-version = inpars.version
+parser = argparse.ArgumentParser()
+parser.add_argument('--config', required=True, help='config filename')
+args = parser.parse_args(argslist)
 
-# Input filenames     
-input_dir = '/global/cfs/cdirs/desi/mocks/lya_forest/develop/cs-alpt/alpt_boxes/v0/box%d/' %nreal
-input_dir_dm = '/pscratch/sd/f/fsin/webon_lc/webjax/holi_production/mock_%d/' %nreal
-output_aux_dir = '/global/cfs/cdirs/desi/mocks/lya_forest/develop/cs-alpt/alpt_skewers/' + version + '/skewers-%d/aux/' %nreal
-output_dir = '/global/cfs/cdirs/desi/mocks/lya_forest/develop/cs-alpt/alpt_skewers/' + version + '/skewers-%d/' %nreal
+config = configparser.ConfigParser()
+config.read(args.config)
+
+nreal = int(config['SETUP']['seed'])
+version = config['SETUP']['version']
+
+# SETUP                                                                                                                                                                                                    
+ngrid = int(config['SETUP']['ngrid'])
+lbox = float(config['SETUP']['lbox'])
+zmin = float(config['SETUP']['zmin'])
+zmax = float(config['SETUP']['zmax'])
+
+# I/O                                                                                                                                                                                                      
+input_dir = config['IO']['input_dir'] + 'mock_%d/' %nreal
+output_dir = config['IO']['output_dir'] + version + '/skewers-%d/' %nreal
+output_aux_dir = output_dir + 'aux/'
 
 # General parameters
 posx_qso_filename = output_aux_dir + 'posxtr_zspace.dat'
@@ -34,13 +48,13 @@ posz_qso_filename = output_aux_dir + 'posztr_zspace.dat'
 
 fits_filename = output_dir + 'master.fits'
 
-delta_filename =  input_dir_dm + 'density_lightcone.h5' #output_aux_dir + 'dm_lc_zspace_cells.dat'#'flux_zspace.dat'
-velx_filename =  input_dir_dm + 'velocity_eulerian_lightcone_x.h5'
-vely_filename =  input_dir_dm + 'velocity_eulerian_lightcone_y.h5'
-velz_filename =  input_dir_dm + 'velocity_eulerian_lightcone_z.h5'
+delta_filename =  input_dir + config['IO']['dm_filename']
+velx_filename =  input_dir + config['IO']['vx_filename']
+vely_filename =  input_dir + config['IO']['vx_filename']
+velz_filename =  input_dir + config['IO']['vy_filename']
 
-zarr_filename = 'zarr.DAT'
-darr_filename = 'dcomOM0.314OL0.686.DAT'
+zarr_filename = config['IO']['zarr_filename']
+darr_filename = config['IO']['darr_filename']
 
 nside = 16
 pixmax = 3072
@@ -49,13 +63,7 @@ num_processes = 64
 
 # General parameters
 
-lbox = 10000.
-ngrid = 1800 
-
-zmin = 1.77
-zmax = 3.8
-
-zmin_extr = 1.77#2.
+zmin_extr = zmin
 
 hrbinw = 0.1
 
@@ -102,13 +110,12 @@ Ax_CIV = 1e-4
 obspos = [5000.,5000.,5000.]
 
 # Cosmological parameters (Abacus)
-h = 0.6736
-H0 = 100
-Om = 0.314
-Orad = 0.
-Ok = 0.
-N_eff = 3.046
-w_eos = -1
+h = float(config['COSMOLOGY']['h'])
+Om = float(config['COSMOLOGY']['Om'])
+Orad = float(config['COSMOLOGY']['Orad'])
+Ok = float(config['COSMOLOGY']['Ok'])
+N_eff = float(config['COSMOLOGY']['N_eff'])
+w_eos = float(config['COSMOLOGY']['w_eos'])
 Ol = 1-Om-Ok-Orad
 
 # Random seed for stochasticity reproducibility

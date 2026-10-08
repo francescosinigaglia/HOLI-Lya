@@ -9,40 +9,50 @@ import astropy.io.fits as fits
 from astropy.table import Table
 import healpy
 import input_params as inpars
+import configparser
+import argparse
 
 # **********************************************
 # **********************************************
 # **********************************************
 # INPUT PARAMETERS
 
-nreal = inpars.nreal
-version = inpars.version
+argslist=None
 
-# Input filenames
-output_aux_dir = '/global/cfs/cdirs/desi/mocks/lya_forest/develop/cs-alpt/alpt_skewers/' + version + '/skewers-%d/aux/' %nreal
-output_dir = '/global/cfs/cdirs/desi/mocks/lya_forest/develop/cs-alpt/alpt_skewers/' + version + '/skewers-%d/' %nreal
+parser = argparse.ArgumentParser()
+parser.add_argument('--config', required=True, help='config filename')
+args = parser.parse_args(argslist)
 
-# General parameters
+config = configparser.ConfigParser()
+config.read(args.config)
+
+nreal = int(config['SETUP']['seed'])
+version = config['SETUP']['version']
+
+# SETUP                                                                                                                                                                                                     
+ngrid = int(config['SETUP']['ngrid'])
+lbox = float(config['SETUP']['lbox'])
+zmin = float(config['SETUP']['zmin'])
+zmax = float(config['SETUP']['zmax'])
+
+nside = 16
+
+# I/O
+
+input_dir = config['IO']['input_dir'] + 'mock_%d/' %nreal
+output_dir = config['IO']['output_dir'] + version + '/skewers-%d/' %nreal
+output_aux_dir = output_dir + 'aux/'
+
 posx_filename = output_aux_dir + 'posxtr_rspace.dat'
-posy_filename =	output_aux_dir + 'posytr_rspace.dat'
+posy_filename = output_aux_dir + 'posytr_rspace.dat'
 posz_filename = output_aux_dir + 'posztr_rspace.dat'
 
 zposx_filename = output_aux_dir + 'posxtr_zspace.dat'
 zposy_filename = output_aux_dir + 'posytr_zspace.dat'
 zposz_filename = output_aux_dir + 'posztr_zspace.dat'
 
-zarr_filename = 'zarr.DAT'
-darr_filename = 'dcomOM0.314OL0.686.DAT'
-
-# General parameters
-
-nside = 16
-
-lbox = 10000.
-ngrid = 1800 
-
-zmin = 0.
-zmax = 3.8
+zarr_filename = config['IO']['zarr_filename']
+darr_filename = config['IO']['darr_filename']
 
 # Observer positions
 obspos = [5000., 5000., 5000.]
@@ -51,13 +61,12 @@ obspos = [5000., 5000., 5000.]
 radsearch = 2
 
 # Cosmological parameters (Abacus)
-h = 0.6736
-H0 = 100
-Om = 0.314
-Orad = 0.
-Ok = 0.
-N_eff = 3.046
-w_eos = -1
+h = float(config['COSMOLOGY']['h'])
+Om = float(config['COSMOLOGY']['Om'])
+Orad = float(config['COSMOLOGY']['Orad'])
+Ok = float(config['COSMOLOGY']['Ok'])
+N_eff = float(config['COSMOLOGY']['N_eff'])
+w_eos = float(config['COSMOLOGY']['w_eos'])
 Ol = 1-Om-Ok-Orad
 
 # Random seed for stochasticity reproducibility
@@ -418,7 +427,7 @@ def extract_skewers(posx, posy, posz, zmin, zmax, zarr, darr, hrbinw, flux, ngri
     # Allocate the matrix
     skmat = np.zeros((len(posx), nbins))
 
-    print(skmat.shape)
+    #print(skmat.shape)
 
     # Set up a template of distances
     dtemplate = np.linspace(dmin, dmax, nbins+1)
@@ -790,7 +799,7 @@ def assign_positions(posx, posy, posz, ncounts, ngrid, lbox, radsearch):
 # **********************************************
 # **********************************************
 print('---------------------------------------------------------')
-print('Code to populate lightcone DM fields with galaxies/haloes')
+print('Convert QSO catalog form cartesian to sky coordinates')
 print('---------------------------------------------------------')
 
 ti = time.time()
@@ -820,9 +829,12 @@ zra, zdec, zzz = cartesian_to_sky(zposx, zposy, zposz, zarr, darr, xobs, yobs, z
 ra += 180. # For convention, define Ra in the interval [0,360]
 zra += 180.
 
-print(np.amin(ra), np.amax(ra), ra)
-print(np.amin(dec), np.amax(dec), dec)
-print(np.amin(zzz), np.amax(zzz), zzz)
+#print(ra/zra)
+#print(dec/zdec)
+
+#print(np.amin(ra), np.amax(ra), ra)
+#print(np.amin(dec), np.amax(dec), dec)
+#print(np.amin(zzz), np.amax(zzz), zzz)
 
 mockid = np.arange(1,len(ra)+1)
 

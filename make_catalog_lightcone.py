@@ -8,42 +8,51 @@ import bias_parameters_qso as pars
 import random
 import input_params as inpars
 import h5py
-import hdf5plugin
+import configparser
+import argparse
 
 # **********************************************
 # **********************************************
 # **********************************************
 # INPUT PARAMETERS
 
-nreal = inpars.nreal
-version = inpars.version
+argslist=None
 
-# Input filenames
-input_dir = '/pscratch/sd/f/fsin/webon_lc/webjax/holi_production/mock_%d/' %nreal
-output_aux_dir = '/global/cfs/cdirs/desi/mocks/lya_forest/develop/cs-alpt/alpt_skewers/' + version + '/skewers-%d/aux/' %nreal
+parser = argparse.ArgumentParser()
+parser.add_argument('--config', required=True, help='config filename')
+args = parser.parse_args(argslist)
 
-dm_filename =  input_dir + 'density_lightcone.h5'
-tweb_filename = input_dir + 'classification_tweb_phi.h5'
-twebdelta_filename = input_dir + 'classification_tweb_delta.h5'
+config = configparser.ConfigParser()
+config.read(args.config)
 
-vx_filename = input_dir + 'velocity_eulerian_lightcone_x.h5'
-vy_filename = input_dir + 'velocity_eulerian_lightcone_y.h5'
-vz_filename = input_dir + 'velocity_eulerian_lightcone_z.h5'
+nreal = int(config['SETUP']['seed'])
+version = config['SETUP']['version']
 
-posx_filename = input_dir + 'positions_lightcone_x.h5'
-posy_filename =	input_dir + 'positions_lightcone_y.h5'
-posz_filename = input_dir + 'positions_lightcone_z.h5'
+# SETUP
+ngrid = int(config['SETUP']['ngrid'])
+lbox = float(config['SETUP']['lbox'])
+zmin = float(config['SETUP']['zmin'])
+zmax = float(config['SETUP']['zmax'])
 
-zarr_filename = 'zarr.DAT'
-darr_filename = 'dcomOM0.314OL0.686.DAT'
+# I/O
+input_dir = config['IO']['input_dir'] + 'mock_%d/' %nreal
+output_dir = config['IO']['output_dir'] + version + '/skewers-%d/' %nreal
+output_aux_dir = output_dir + 'aux/'
 
-# General parameters
+dm_filename =  input_dir + config['IO']['dm_filename']
+tweb_filename = input_dir + config['IO']['tweb_filename']
+twebdelta_filename = input_dir + config['IO']['twebdelta_filename']
 
-lbox = 10000.
-ngrid = 1800 
+vx_filename = input_dir + config['IO']['vx_filename']
+vy_filename = input_dir + config['IO']['vy_filename']
+vz_filename = input_dir + config['IO']['vz_filename']
 
-zmin = 1.65 #1.77
-zmax = 3.8
+posx_filename = input_dir + config['IO']['posx_filename']
+posy_filename =	input_dir + config['IO']['posy_filename']
+posz_filename = input_dir + config['IO']['posz_filename']
+
+zarr_filename = config['IO']['zarr_filename']
+darr_filename = config['IO']['darr_filename']
 
 # Observer positions
 obspos = [5000., 5000., 5000.]
@@ -61,14 +70,6 @@ dth_arr = np.array(pars.dth_arr)
 rhoeps_arr = np.array(pars.rhoeps_arr) 
 eps_arr = np.array(pars.eps_arr)
 
-"""
-print(nmean_arr)
-print(alpha_arr)
-print(beta_arr)
-print(dth_arr)
-print(rhoeps_arr)
-print(eps_arr)
-"""
 # RSD parameters
 bb_arr = np.array(pars.bb_arr)
 betarsd_arr = np.array(pars.betarsd_arr)
@@ -78,13 +79,12 @@ gamma_arr = np.array(pars.gamma_arr)
 radsearch = 2
 
 # Cosmological parameters (Abacus)
-h = 0.6736
-H0 = 100
-Om = 0.314
-Orad = 0.
-Ok = 0.
-N_eff = 3.046
-w_eos = -1
+h = float(config['COSMOLOGY']['h'])
+Om = float(config['COSMOLOGY']['Om'])
+Orad = float(config['COSMOLOGY']['Orad'])
+Ok = float(config['COSMOLOGY']['Ok'])
+N_eff = float(config['COSMOLOGY']['N_eff'])
+w_eos = float(config['COSMOLOGY']['w_eos'])
 Ol = 1-Om-Ok-Orad
 
 # Random seed for stochasticity reproducibility
@@ -1167,7 +1167,7 @@ def sample_galaxies(lbox, ngrid, posxprep, posyprep, poszprep, ncounts):
 # **********************************************
 # **********************************************
 print('---------------------------------------------------------')
-print('Code to populate lightcone DM fields with galaxies/haloes')
+print('Make QSO catalog in cartesian space')
 print('---------------------------------------------------------')
 
 ti = time.time()
@@ -1187,15 +1187,10 @@ delta = h5py.File(dm_filename, 'r')['value'][()]
 delta = np.reshape(delta, (ngrid,ngrid,ngrid))
 
 
-#tweb = np.fromfile(tweb_filename, dtype=np.float32)  # In real space
-#twebdelta = np.fromfile(twebdelta_filename, dtype=np.float32)  # In real space 
 tweb = h5py.File(tweb_filename, 'r')['value'][()]
 twebdelta = h5py.File(twebdelta_filename, 'r')['value'][()]
 
 # Positions
-#posx = np.fromfile(posx_filename, dtype=np.float32)   
-#posy = np.fromfile(posy_filename, dtype=np.float32) 
-#posz = np.fromfile(posz_filename, dtype=np.float32)
 posx = h5py.File(posx_filename, 'r')['value'][()]
 posy = h5py.File(posy_filename, 'r')['value'][()]
 posz = h5py.File(posz_filename, 'r')['value'][()]
@@ -1276,9 +1271,9 @@ print('')
 
 print('Mapping tracers positions from real to redshift space ...')
 
-#posx = np.fromfile(output_aux_dir + 'posxtr_rspace.dat', dtype='float32')
-#posy = np.fromfile(output_aux_dir + 'posytr_rspace.dat', dtype='float32')
-#posz = np.fromfile(output_aux_dir + 'posztr_rspace.dat', dtype='float32')
+posx = np.fromfile(output_aux_dir + 'posxtr_rspace.dat', dtype='float32')
+posy = np.fromfile(output_aux_dir + 'posytr_rspace.dat', dtype='float32')
+posz = np.fromfile(output_aux_dir + 'posztr_rspace.dat', dtype='float32')
 
 # Now the containers become redshifft space positions
 posx, posy, posz = real_to_redshift_space(delta, tweb, posx, posy, posz, vx, vy, vz, ngrid,  lbox, zarr, darr, zmin, zmax, xobs, yobs, zobs, bv_arr, bb_arr, beta_arr, gamma_arr, zzarrbias)

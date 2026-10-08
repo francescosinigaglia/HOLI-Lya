@@ -2,14 +2,25 @@ from astropy.io import fits
 import input_params as inpars
 import healpy
 import numpy as np
+import configparser
+import argparse
 
 nside = 16
 
-nreal = inpars.nreal
-version = inpars.version
+argslist=None
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--config', required=True, help='config filename')
+args = parser.parse_args(argslist)
+
+config = configparser.ConfigParser()
+config.read(args.config)
+
+nreal = int(config['SETUP']['seed'])
+version = config['SETUP']['version']
 
 # Input filenames                                                                                                                                               
-output_dir = '/global/cfs/cdirs/desi/mocks/lya_forest/develop/cs-alpt/alpt_skewers/' + version + '/skewers-%d/' %nreal
+output_dir = config['IO']['output_dir'] + version + '/skewers-%d/' %nreal
 
 #pix = healpy.ang2pix(nside, np.radians(90.-data['DEC']), np.radians(data['RA']), nest=True)
 
