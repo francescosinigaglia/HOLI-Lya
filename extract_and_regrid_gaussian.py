@@ -6,8 +6,9 @@ import bias_parameters_lya as biaspars
 import astropy.io.fits as fits
 import healpy
 import astropy.constants as const
-from astropy.table import Table
+from astropy.table import Table, vstack
 from multiprocessing import Pool, cpu_count
+from dla_hybrid import PyigmTables, draw_dlas_on_skewers
 import input_params as inpars
 import math
 import h5py
@@ -50,14 +51,14 @@ fits_filename = output_dir + 'master.fits'
 
 delta_filename =  input_dir + config['IO']['dm_filename']
 velx_filename =  input_dir + config['IO']['vx_filename']
-vely_filename =  input_dir + config['IO']['vx_filename']
-velz_filename =  input_dir + config['IO']['vy_filename']
+vely_filename =  input_dir + config['IO']['vy_filename']
+velz_filename =  input_dir + config['IO']['vz_filename']
 
 zarr_filename = config['IO']['zarr_filename']
 darr_filename = config['IO']['darr_filename']
 
 nside = 16
-pixmax = 3072
+pixmax = 200#3072
 
 num_processes = 64
 
@@ -75,14 +76,14 @@ dlam = 0.2
 alpha_fgpa = 1.65
 
 z0 = 3.0
-k1 = 0.1#0.0341
-nn = 0.732
+k1 = 1.50#1.30#0.0341
+nn = 1.3#1.538
 
 normrand = 1.0
-A0_1 = 1.9
-A1_1 = 0.276
-A0_2 = 1.25
-A1_2 = 4.5 # Fix as from LyaColore
+A0_1 = 1.872
+A1_1 = 0.5#0.289
+A0_2 = 1.016
+A1_2 = 4. # Fix as from LyaColore
 
 bb = 1.0
 beta = 1.
@@ -117,6 +118,10 @@ Ok = float(config['COSMOLOGY']['Ok'])
 N_eff = float(config['COSMOLOGY']['N_eff'])
 w_eos = float(config['COSMOLOGY']['w_eos'])
 Ol = 1-Om-Ok-Orad
+
+# DLA parameters
+Nmin_dla, Nmax_dla = 20.0, 22.5
+tabs = PyigmTables('pyigm_fN_tables.npz', Om=Om, Orad=Orad, Ok=Ok)
 
 # Random seed for stochasticity reproducibility
 np.random.seed(123456)
@@ -195,9 +200,9 @@ def extract_skewers(posx, posy, posz, zmin, zmax, zarr, darr, hrbinw, delta, vx,
                 skmat[ii,jj] = delta[indx,indy,indz]
                 indmat[ii,jj] = ind3d
 
-                vxtmp = vx[indx,indy,indz] #trilininterp(xtmp, ytmp, ztmp, vx, lbox, ngrid)
-                vytmp = vy[indx,indy,indz] #trilininterp(xtmp, ytmp, ztmp, vy, lbox, ngrid)
-                vztmp = vz[indx,indy,indz] #trilininterp(xtmp, ytmp, ztmp, vz, lbox, ngrid)
+                vxtmp = trilininterp(posxlya, posylya, poszlya, vx, lbox, ngrid)#vx[indx,indy,indz] #trilininterp(xtmp, ytmp, ztmp, vx, lbox, ngrid)
+                vytmp = trilininterp(posxlya, posylya, poszlya, vy, lbox, ngrid)#vy[indx,indy,indz] #trilininterp(xtmp, ytmp, ztmp, vy, lbox, ngrid)
+                vztmp = trilininterp(posxlya, posylya, poszlya, vz, lbox, ngrid)#vz[indx,indy,indz] #trilininterp(xtmp, ytmp, ztmp, vz, lbox, ngrid)
 
                 sigma_rsd = bb*(1. + delta[indx,indy,indz])**beta
                 
@@ -327,8 +332,35 @@ def project_vector_los(posx, posy, posz, vecx, vecy, vecz, zarr, darr, xobs, yob
     return vecx, vecy, vecz, norm
 
 # **********************************************
-@njit(parallel=False, cache=True, fastmath=True)
+# **********************************************
+@njit(parallel=False, fastmath=True, cache=True)
 def trilininterp(xx, yy, zz, arrin, lbox, ngrid):
+    # Periodic trilinear interpolation with grid values at cell centres.
+    lcell = lbox/ngrid
+    fx = xx/lcell - 0.5
+    fy = yy/lcell - 0.5
+    fz = zz/lcell - 0.5
+    i0 = int(np.floor(fx))
+    j0 = int(np.floor(fy))
+    k0 = int(np.floor(fz))
+    wx = fx - i0
+    wy = fy - j0
+    wz = fz - k0
+    out = 0.
+    for aa in range(2):
+        wwx = wx if aa==1 else 1.-wx
+        ia = (i0+aa) % ngrid
+        for bb_ in range(2):
+            wwy = wy if bb_==1 else 1.-wy
+            jb = (j0+bb_) % ngrid
+            for cc in range(2):
+                wwz = wz if cc==1 else 1.-wz
+                kc = (k0+cc) % ngrid
+                out += arrin[ia,jb,kc]*wwx*wwy*wwz
+    return out
+
+@njit(parallel=False, cache=True, fastmath=True)
+def trilininterp_old(xx, yy, zz, arrin, lbox, ngrid):
 
     lcell = lbox/ngrid
 
@@ -934,6 +966,27 @@ def apply_rsd_nonumba(d_grid, z_template, skmat_tau_real, v_pec, b_doppler, du_c
     
     return skmat_tau_redshift
  
+# **********************************************
+def build_dla_rows(dla, qsotab, pix):
+    # sort by redshift within each sightline, then assign DLAIDs = MOCKID*1000 + n
+    dla = np.sort(dla, order=['MOCKID', 'Z_DLA_NO_RSD'])
+    mid = dla['MOCKID']
+    if len(dla):
+        new = np.r_[True, mid[1:] != mid[:-1]]
+        start = np.maximum.accumulate(np.where(new, np.arange(len(mid)), 0))
+        dla['DLAID'] = mid * 1000 + (np.arange(len(mid)) - start)
+    # look up the quasar of each DLA by MOCKID
+    qid = np.asarray(qsotab['MOCKID']).astype(np.int64)
+    order = np.argsort(qid)
+    pos = order[np.searchsorted(qid, mid, sorter=order)]
+    assert np.all(qid[pos] == mid), 'DLA MOCKID not found in master.fits'
+    q = qsotab[pos]
+    return Table({'RA': np.asarray(q['RA'], 'f8'), 'DEC': np.asarray(q['DEC'], 'f8'),
+                  'Z_QSO_NO_RSD': np.asarray(q['Z_noRSD'], 'f8'), 'Z_QSO_RSD': np.asarray(q['Z'], 'f8'),
+                  'Z_DLA_NO_RSD': dla['Z_DLA_NO_RSD'], 'Z_DLA_RSD': dla['Z_DLA_RSD'],
+                  'N_HI_DLA': dla['N_HI_DLA'], 'MOCKID': mid, 'DLAID': dla['DLAID'],
+                  'PIXNUM': np.full(len(dla), pix, dtype=np.int64)})
+
 # **********************************************    
 @njit(parallel=False, cache=True, fastmath=True)
 def shift_metal(lammin, lammax, ztemplate, lam_rf_lya, lam_rf, skmat, indmat):
@@ -955,9 +1008,40 @@ def shift_metal(lammin, lammax, ztemplate, lam_rf_lya, lam_rf, skmat, indmat):
 
     return skmat_new
 
-# **********************************************    
+# **********************************************
+# **********************************************
 @njit(parallel=False, cache=True, fastmath=True)
 def regrid_skewers(lammin, lammax, dlam, ztemplate, lam_rf, skmat, indmat):
+
+    numbin = int((lammax-lammin)/dlam)
+    lam_template = np.linspace(lammin, lammax, num=numbin+1)
+    lam_template_cen = 0.5*(lam_template[1:]+lam_template[:-1])
+
+    lam_arr = (1+ztemplate)*lam_rf
+
+    nobj = skmat.shape[0]
+
+    skmat_new = np.zeros((nobj, numbin))
+
+    # Linear interpolation of tau at the centres of the output pixels.
+    # Pixels outside the forest (indmat<0) are left at tau=0 (F=1), as before.
+    for ii in prange(nobj):
+        valid = indmat[ii,:]>=0
+        if np.sum(valid)<2:
+            continue
+        lam_valid = lam_arr[valid]
+        tau_valid = skmat[ii,:][valid]
+        lo = lam_valid[0]
+        hi = lam_valid[-1]
+        for kk in range(numbin):
+            lam_out = lam_template_cen[kk]
+            if lam_out>=lo and lam_out<=hi:
+                skmat_new[ii,kk] = np.interp(lam_out, lam_valid, tau_valid)
+
+    return skmat_new, lam_template_cen
+
+@njit(parallel=False, cache=True, fastmath=True)
+def regrid_skewers_old(lammin, lammax, dlam, ztemplate, lam_rf, skmat, indmat):
 
     numbin = int((lammax-lammin)/dlam)
     lam_template = np.linspace(lammin, lammax, num=numbin+1)
@@ -1143,6 +1227,7 @@ zobs = obspos[2]
 zarr = np.fromfile(zarr_filename, dtype=np.float32)
 darr = np.fromfile(darr_filename, dtype=np.float32)
 
+zc_cal, t_cal, p_cal = np.load(output_aux_dir + 'dla_calib.npy')
 
 print('Read QSO positions ...')
 # Now read QSO positions in redshift space                                        
@@ -1216,6 +1301,8 @@ def extract_and_regrid_parallel(ii):
 
         print(ii)
 
+        rng = np.random.default_rng([nreal, ii])
+
         if not os.path.exists(output_dir + '/%d/%d/' %(dirnum,ii)):
             os.mkdir(output_dir + '%d/%d/' %(dirnum,ii))
 
@@ -1232,6 +1319,7 @@ def extract_and_regrid_parallel(ii):
         skmat_gauss = convolve_p1d(skmat, ztemplate)
 
         # Then add them to the skewers
+        skmat_delta = skmat#.copy()
         skmat = add_small_scale_power(ngrid, lbox, skmat, skmat_gauss, indmat, ztemplate, dtemplate)
 
         # Do metals skewers
@@ -1316,19 +1404,30 @@ def extract_and_regrid_parallel(ii):
         hdu1 = fits.BinTableHDU.from_columns([c1, c2, c3, c4, c5], name='METADATA')
 
         # Read DLA catalog and build HDU
+        """
         rawdla = fits.open(output_dir + 'master_DLA.fits')
 
         dlatab = rawdla[1].data
         arr, inddx, inddx2 = np.intersect1d(dlatab['MOCKID'], mockidd, return_indices=True)
         data = dlatab[inddx]
+        """
 
-        c1 = fits.Column(name='RA', array=data['RA'], format='D')
-        c2 = fits.Column(name='DEC', array=data['DEC'], format='D')
-        c3 = fits.Column(name='Z_DLA_NO_RSD', array=data['Z_DLA_NO_RSD'], format='D')
-        c4 = fits.Column(name='Z_DLA_RSD', array=data['Z_DLA_RSD'], format='D')
-        c5 = fits.Column(name='MOCKID', array=data['MOCKID'], format='D')
-        c6 = fits.Column(name='DLAID', array=data['DLAID'], format='D')
-        c7 = fits.Column(name='N_HI_DLA', array=data['NHI_DLA'], format='D')
+        dla = draw_dlas_on_skewers(skmat_delta, skmat_vel, indmat, ztemplate, mockidd,
+                           zc_cal, t_cal, p_cal, tabs.dndz,
+                           Nmin=Nmin_dla, Nmax=Nmax_dla, rng=rng,
+                           get_NHI=lambda z, NHI_min, NHI_max:
+                               tabs.get_NHI(z, NHI_min, NHI_max, rng=rng))
+        
+        # DLAs drawn for this pixel (replaces reading master_DLA.fits)
+        dlatab = build_dla_rows(dla, qsotab, ii)
+
+        c1 = fits.Column(name='RA', array=dlatab['RA'], format='D')
+        c2 = fits.Column(name='DEC', array=dlatab['DEC'], format='D')
+        c3 = fits.Column(name='Z_DLA_NO_RSD', array=dlatab['Z_DLA_NO_RSD'], format='D')
+        c4 = fits.Column(name='Z_DLA_RSD', array=dlatab['Z_DLA_RSD'], format='D')
+        c5 = fits.Column(name='MOCKID', array=dlatab['MOCKID'], format='K')
+        c6 = fits.Column(name='DLAID', array=dlatab['DLAID'], format='K')
+        c7 = fits.Column(name='N_HI_DLA', array=dlatab['N_HI_DLA'], format='D')
         hdudla = fits.BinTableHDU.from_columns([c1, c2, c3, c4, c5, c6, c7], name='DLA')
 
         hdu_list = fits.HDUList([
