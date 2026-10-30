@@ -1463,7 +1463,7 @@ def extract_and_regrid_parallel(ii):
         #print(ii, (tf0-ti0)/60, (tf1-ti1)/60., (tf2-ti2)/60., (tf3-ti3)/60., (tf4-ti4)/60., (tf5-ti5)/60.)
 
         #break
-        
+    return dlatab
 
 # ******************************************************************
 
@@ -1493,7 +1493,14 @@ else:
     num_processes = num_processes
 
 with Pool(processes=num_processes) as pool:
-    pool.map(extract_and_regrid_parallel, ii_list)
+    results = pool.map(extract_and_regrid_parallel, ii_list)
+
+master = vstack([t for t in results if t is not None and len(t) > 0])
+hdu = fits.BinTableHDU(master, name='DLACAT')
+hdu.header['NSIDE'] = nside
+hdu.header['HPXNEST'] = True
+fits.HDUList([fits.PrimaryHDU(), hdu]).writeto(output_dir + 'master_DLA.fits', overwrite=True)
+print('N DLAs in master_DLA.fits:', len(master))
 
 tfin = time.time()
 
